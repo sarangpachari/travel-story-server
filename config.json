@@ -1,0 +1,4 @@
+{
+    "connectionString":"mongodb+srv://user:sarang@travelstory-cluster.emzwr.mongodb.net/?retryWrites=true&w=majority&appName=TravelStory-Cluster",
+    "SERVER_BASE_URL":"http://localhost:8000"
+}
