@@ -128,6 +128,54 @@ app.get("/get-user", authenticateToken, async (req, res) => {
   });
 });
 
+//TO HANDLE IMAGE UPLOAD
+app.post("/image-upload", upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res
+        .status(400)
+        .json({ error: true, message: "No image uploaded" });
+    }
+    const imageUrl = `${config.SERVER_BASE_URL}/uploads/${req.file.filename}`;
+    res.status(201).json({ imageUrl, message: "Image uploaded successfully" });
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message });
+  }
+});
+
+//DELETE AN IMAGE FROM UPLOADS
+app.delete("/delete-image", async (req, res) => {
+  const { imageUrl } = req.query;
+
+  if (!imageUrl) {
+    return res
+      .status(400)
+      .json({ error: true, message: "imageUrl parameter is required" });
+  }
+  try {
+    //EXTRACT FILENAME FROM imageUrl
+    const filename = path.basename(imageUrl);
+
+    //DEFINE THE FILE PATH
+    const filePath = path.join(__dirname, "uploads", filename);
+
+    //CHECK IF THE FILE EXISTS
+    if (fs.existsSync(filePath)) {
+      //DELETE THE FILE
+      fs.unlinkSync(filePath);
+      res.status(200).json({ message: "Image deleted successfully" });
+    } else {
+      res.status(200).json({ error: true, message: "Image not found" });
+    }
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message });
+  }
+});
+
+//SERVE STATIC FILES FROM UPLOADS AND ASSETS DIRECTORY
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use("/assets", express.static(path.join(__dirname, "assets")));
+
 //ADD TRAVEL STORY
 app.post("/add-travel-story", authenticateToken, async (req, res) => {
   const { title, story, visitedLocation, imageUrl, visitedDate } = req.body;
@@ -172,20 +220,160 @@ app.get("/get-all-stories", authenticateToken, async (req, res) => {
   }
 });
 
-//TO HANDLE IMAGE UPLOAD
-app.post("/image-upload", upload.single("image"), async (req, res) => {
+//EDIT TRAVEL STORY
+app.put("/edit-story/:id", authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { title, story, visitedLocation, imageUrl, visitedDate } = req.body;
+  const { userId } = req.user;
+
+  //VALIDATE REQUIRED FIELDS
+  if (!title || !story || !visitedLocation || !visitedDate || !imageUrl) {
+    return res
+      .status(400)
+      .json({ error: true, message: "Please fill all fields" });
+  }
+
+  //CONVERT VISITED DATE IN MILLISECONDS TO DATE OBJECT
+  const parsedVisitedDate = new Date(parseInt(visitedDate));
+
   try {
-    if (!req.file) {
+    //FIND THE TRAVEL STORY BY ID AND ENSURE IT BELONGS TO THE AUTHENTICATED USER
+    const travelStory = await TravelStory.findOne({ _id: id, userId: userId });
+    if (!travelStory) {
       return res
-        .status(400)
-        .json({ error: true, message: "No image uploaded" });
+        .status(404)
+        .json({ error: true, message: "Travel Story not found" });
     }
-    const imageUrl = `${config.SERVER_BASE_URL}/uploads/${req.file.filename}`;
-    res.status(201).json({ imageUrl, message: "Image uploaded successfully" });
+
+    const placeholderImgUrl = `${config.SERVER_BASE_URL}/assets/placeholder.png`;
+
+    travelStory.title = title;
+    travelStory.story = story;
+    travelStory.visitedLocation = visitedLocation;
+    travelStory.imageUrl = imageUrl || placeholderImgUrl;
+    travelStory.visitedDate = parsedVisitedDate;
+
+    await travelStory.save();
+    res.status(200).json({
+      story: travelStory,
+      message: "Travel Story updated successfully",
+    });
   } catch (error) {
     res.status(500).json({ error: true, message: error.message });
   }
 });
+
+//DELETE TRAVEL STORY
+app.delete("/delete-story/:id", authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.user;
+
+  try {
+    //FIND THE TRAVEL STORY BY ID AND ENSURE IT BELONGS TO THE AUTHENTICATED USER
+    const travelStory = await TravelStory.findOne({ _id: id, userId: userId });
+    if (!travelStory) {
+      return res
+        .status(404)
+        .json({ error: true, message: "Travel Story not found" });
+    }
+
+    //DELETE THE TRAVEL STORY FROM DB
+    await travelStory.deleteOne({ _id: id, userId: userId });
+
+    //EXTRACT THE FILENAME FROM THE imageUrl
+    const imageUrl = travelStory.imageUrl;
+    const filename = path.basename(imageUrl);
+
+    //DEFINE THE FILEPATH
+    const filePath = path.join(__dirname, "uploads", filename);
+
+    //DELETE THE IMAGE FILE FROM THE UPLOADS FOLDER
+    fs.unlink(filePath, (err) => {
+      if (err) console.log("Failed to delete image file :", err);
+    });
+
+    res.status(200).json({ message: "Travel Story deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message });
+  }
+});
+
+//UPDATE isFavourite
+app.put("/update-is-favourite/:id", authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { isFavourite } = req.body;
+  const { userId } = req.user;
+
+  try {
+    //FIND THE TRAVEL STORY BY ID
+    const travelStory = await TravelStory.findOne({ _id: id, userId: userId });
+    if (!travelStory) {
+      return res
+        .status(404)
+        .json({ error: true, message: "Travel Story Not Found" });
+    }
+    //UPDATE THE isFavourite FIELD
+    travelStory.isFavourite = isFavourite;
+    await travelStory.save();
+
+    res.status(200).json({
+      story: travelStory,
+      message: "isFavourite updated successfully",
+    });
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message });
+  }
+});
+
+//SEARCH TRAVEL STORIES
+app.get("/search", authenticateToken, async (req, res) => {
+  const { query } = req.query;
+  const { userId } = req.user;
+
+  if (!query) {
+    return res
+      .status(404)
+      .json({ error: true, message: "Please provide a query" });
+  }
+
+  try {
+    const searchResults = await TravelStory.find({
+      userId: userId,
+      $or: [
+        { title: { $regex: query, $options: "i" } },
+        { story: { $regex: query, $options: "i" } },
+        { visitedLocation: { $regex: query, $options: "i" } },
+      ],
+    }).sort({ isFavourite: -1 })
+
+    res.status(200).json({stories: searchResults})
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message });
+  }
+});
+
+//FILTER TRAVEL STORIES BY DATE RANGE
+app.get("/travel-stories/filter", authenticateToken, async (req, res) => {
+  const { startDate, endDate } = req.query;
+  const { userId } = req.user;
+
+  try {
+    //CONVERT START DATE AND END DATE FROM MILLISECONDS TO DATE OBJECT
+    const start = new Date(parseInt(startDate))
+    const end = new Date(parseInt(endDate))
+
+    //FIND TRAVEL STORIES THAT BELONGS TO AUTHENTICATED USER AND FALL WITHIN THE DATE RANGE
+    const filteredStories = await TravelStory.find({
+      userId: userId,
+      visitedDate: { $gte: start, $lte: end },
+    }).sort({isFavourite: -1})
+    
+    res.status(200).json({stories: filteredStories})
+    
+  } catch (error) {
+    res.status(500).json({ error: true, message: error.message });
+  }
+})
 
 //STARTING SERVER AT PORT 8000
 app.listen(8000);
