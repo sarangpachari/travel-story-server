@@ -137,7 +137,7 @@ app.post("/image-upload", upload.single("image"), async (req, res) => {
         .json({ error: true, message: "No image uploaded" });
     }
     const imageUrl = `${config.SERVER_BASE_URL}/uploads/${req.file.filename}`;
-    res.status(201).json({ imageUrl, message: "Image uploaded successfully" });
+    res.status(200).json({ imageUrl, message: "Image uploaded successfully" });
   } catch (error) {
     res.status(500).json({ error: true, message: error.message });
   }
@@ -227,7 +227,7 @@ app.put("/edit-story/:id", authenticateToken, async (req, res) => {
   const { userId } = req.user;
 
   //VALIDATE REQUIRED FIELDS
-  if (!title || !story || !visitedLocation || !visitedDate || !imageUrl) {
+  if (!title || !story || !visitedLocation || !visitedDate ) {
     return res
       .status(400)
       .json({ error: true, message: "Please fill all fields" });
